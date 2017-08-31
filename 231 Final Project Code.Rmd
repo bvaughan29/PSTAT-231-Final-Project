@@ -1,0 +1,131 @@
+---
+title: "231 Final Project Summary and Code"
+author: "Ben Vaughan"
+output: pdf_document
+---
+
+Project Summary:
+For this project, I was looking at game data, specifically from a game called Super Smash Bros. Melee, a very well received title from the Nintendo GameCube in 2001. This game has remained popular in the fighting-games community despite its age and has been picked apart to the point where fans and professionals have ranked the characters in highly-regarded teir lists. With this project, I wanted to see if, based on data from the game, I could cluster the characters the same way they are clustered on these semi-official tier lists. There are 26 characters in the game, so there are 26 observations, and I considered 62 variables that each of the characters had. This data is not nearly complete; however, as there are many more factors that contribute to the ability of each of the characters that I did not consider. Besides this point, much of the data I consider in the analysis is ordinal data, in which the characters are simply ranked, but there is no indication of the difference between the characters with respect to these variables. There is also a single binary variable to consider. Because the data contained mixed types, I use the `daisy()` function in the `cluster` package to calculate the dissimilarity matrix and then use clustering algorithms that utilize this dissimilarity matrix. I compare the results of these algorithms with k-means, which does not factor in this appropriate dissimilarity matrix, as well, but am cautious and discuss my findings.
+
+I first load appropriate libraries and the data
+```{r}
+library(cluster)
+library(randomForest)
+library(lattice)
+
+load("C:/Users/Ben/Dropbox/PSTAT 231/Final Project/melee.RData")
+```
+
+Because there are numeric variables along with ordinal and binary variables, I need to use the `daisy()` function to compute the dissimilarity matrix for clustering.
+
+```{r}
+#create dissimilarity matrix
+#account for binary and ordinal variables with daisy function
+dis <- daisy(melee.dat, type=list(ordratio=c("gr","rd","frd","brd","ws","rs","fs","ssl","da","wdl","fjh","sjh","tjh","shjh","lrd1","lrd2","lahr1","lahr2","hams","hafd"),symm="wj"))
+```
+
+I begin with heirarchical clustering, using different link functions to see how performance differs.
+
+```{r}
+#try different heirarchical clustering methods, different linkage functions
+hclust.melee.single <- hclust(dis,method="single")
+
+hclust.melee.complete <- hclust(dis,method="complete")
+
+hclust.melee.avg <- hclust(dis,method="average")
+
+#plot heirarchical clustering results
+plot(hclust.melee.single,main="Single Link Function HClust")
+abline(h=0.21575,lty=2,col="red")
+
+plot(hclust.melee.complete,main="Complete Link Function HClust")
+abline(h=0.275,lty=2,col="green")
+
+plot(hclust.melee.avg,main="Average Link Function HClust")
+abline(h=0.26,lty=2,col="blue")
+```
+
+Because the semi-official tier list of characters has 9 clusters, I plot each of the dendrograms with a horizontal line that splits the dendrogram into 9 branches. However, it is a bit difficult to read these plots and tell if their results are any different, so I will now try using the `cutree` function to get a clearer indication of which characters are being clustered together.
+
+```{r}
+groups.9.single = cutree(hclust.melee.single,k=9)
+#see how many characters are in each cluster
+table(groups.9.single)
+#there are 12 characters in the second cluster
+#this is an unfavorable result, so I will look at the other clusterings
+
+groups.9.complete = cutree(hclust.melee.complete,k=9)
+table(groups.9.complete)
+sort(groups.9.complete)
+
+groups.9.avg = cutree(hclust.melee.avg,k=9)
+table(groups.9.avg)
+#there are 10 characters in the third cluster, which is still unfavorable
+```
+
+The results from the heirarchical clustering using the complete link function with 9 clusters has, subjectively, the best results.
+
+I would like to compare these heirarchical clustering results with k-medoids. I think k-medoids is more appropriate than the k-means algorithm because k-medoids uses as input the dissimilarity matrix calculated `daisy()` which takes into account the ordinal and binary variables that exist in the data.
+
+```{r}
+#k-medoids clustering using dissimilarity matrix from daisy
+medoids.melee.9 <- pam(dis, k=9)
+sort(medoids.melee.9$cluster)
+```
+
+While it may not be appropriate, I would like to look at the results from k-means as well.
+
+```{r}
+#k-means clustering
+km.melee.9 <- kmeans(melee.dat,centers=9,nstart=50)
+sort(km.melee.9$cluster)
+#again, means of ordinal and binary data don't make much sense
+
+```
+
+Because the results from hierarchical clustering and k-medoids seem comparable to those from k-means, despite the fact that k-means doesn't take into account the fact that some of the variables in the data are ordinal or binary, I would like to get some sense of which variables have the largest influence on the clustering. For this, one could run PCA; however, detecting variation in and scaling oridinal or binary data does not make sense. Because of this, I tried to find a Factor Analysis algorithm that took the mixed data types into account. While I did find an algorithm for this, I couldn't find one that also took care of the fact that I had more predictors than observations. For this reason, I also try using the `randomForest()` function in unsupervised mode and look at the `importance` output.
+
+```{r}
+#####regular pca
+# pca <- prcomp(x=melee.mat,center=T,scale.=T)
+##### variation and scaling of ordinal and binomial data makes no sense
+##### therefore regular PCA doesn't work 
+
+#####PCA for mixed data
+# library(PCAmixdata)
+# melee.dat$wj <- as.factor(melee.dat$wj)
+# mpca <- PCAmix(X.quali=melee.dat[,32],rename.level=TRUE)
+#####Has an issue with having more predictors than observations, get error message
+
+#random Forest
+rf.melee <- randomForest(melee.dat)
+imp <- as.data.frame(rf.melee$importance)
+imp[order(-imp$MeanDecreaseGini),,drop=FALSE]
+#calls random forest in unsupervised mode
+#trying to get some sense of importance what variables have the strongest infulence on the 
+#clustering of the data
+```
+
+From here, we see that many of the variables that are considered to be of high importance are ordinal variables. If the result here were actually the numerical variables that had greater importance, then I would say that the results from k-means had a good reason to be similar to those of hierarchical clustering and k-medoids clustering; however, because k-means does not take the mixed data types into account, I believe it is better to make conclusions based on the results from hierarchical and k-medoids clustering. I will now compare the results from these methods.
+
+```{r}
+#checking for strong block structure in level plot
+dis.mat <- as.matrix(dis)
+levelplot(dis.mat[hclust.melee.complete$order,
+                  hclust.melee.complete$order])
+#somewhat weak block structure
+#leads us to thinking that differences between clusters aren't large
+#this could be reflective of no huge differences in semi-official tier-list scores
+
+#compare jumbers in each cluster for both methods
+table(groups.9.complete,medoids.melee.9$clustering)
+#results are the same except for 5 observations
+groups.9.complete != medoids.melee.9$clustering
+#Mewtwo, Peach, Pichu, Pikachu, Samus are different between the methods
+
+#silhouette plot for kmedoids
+plot(medoids.melee.9)
+#We see that many observations have relatively small #silhouette scores, meaning they are close to other #clusters and some are negative, meaning they likely #belong to other clusters
+#This is consistent with the plot from hclust
+```
+
